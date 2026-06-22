@@ -1,0 +1,18 @@
+# Excel y respaldos — datos reales no van a GitHub
+*.xlsx
+*.xls
+*_backup_*.xlsx
+
+# Salidas generadas
+output/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Config local (puede tener rutas de máquina de trabajo)
+config.local.json
