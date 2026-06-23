@@ -94,7 +94,7 @@ MENU = """
 |  1. Generar correos a gerentes                   |
 |  2. Arrastrar horas pendientes (FDS)             |
 |  3. Mensajes al equipo (tras aprobacion)         |
-|  4. Resumen para el jefe                         |
+|  4. Resumen para RD                              |
 |  0. Salir                                        |
 +--------------------------------------------------+"""
 
@@ -129,7 +129,7 @@ def main() -> None:
             procesar_aprobacion(excel_path, semana_sel, output_dir)
 
         elif opcion == "4":
-            print("\n── Función 4: Resumen para el jefe ────────────────────")
+            print("\n── Función 4: Resumen para RD ────────────────────────")
             generar_resumen(excel_path, semana_sel, output_dir)
 
         elif opcion == "0":

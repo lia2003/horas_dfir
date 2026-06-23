@@ -23,6 +23,7 @@ from pathlib import Path
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Border, Alignment
+from openpyxl.worksheet.datavalidation import DataValidation
 
 from .excel_reader import (
     PROYECTOS_EXCLUIDOS,
@@ -167,6 +168,12 @@ def _escribir_fds(
             for i, f in enumerate(nuevas):
                 _escribir_celda_fds(ws, fila_insercion + i, f, ws_src)
 
+    # insert_rows puede reordenar los rangos del sqref y desincronizar la
+    # referencia relativa de fórmula (ej: sqref "D9:D18 D3:D7" con fórmula
+    # "$C3" hace que Proyecto use el Tipo de la fila 3 para TODAS las filas).
+    # Re-aplicar las DVs estándar con sqrefs simples (un solo rango) corrige esto.
+    _restaurar_dvs(ws)
+
     # Post-proceso: inyectar x14:dataValidations y restaurar archivos vulnerables
     def _post(tmp):
         if hoja_nueva:
@@ -223,13 +230,13 @@ def _inyectar_ext_lst(
     original_path: Path | None = None,
 ) -> None:
     """
-    Abre el xlsx temporal como zip, localiza la hoja recién creada e inyecta
-    el bloque extLst (x14:dataValidations) antes de </worksheet>.
-    Elimina los xr:uid para evitar GUIDs duplicados entre hojas.
+    Post-proceso ZIP: inyecta x14 extLst en la hoja nueva y restaura
+    el bloque extLst en todas las hojas existentes (openpyxl lo elimina al guardar).
+    También restaura externalLinks/drawings para evitar el diálogo de reparación.
 
-    También restaura externalLinks y drawings desde el archivo original porque
-    openpyxl puede corromper sus cached values al guardar, lo que provoca el
-    diálogo "We found a problem…" al abrir el Excel.
+    IMPORTANTE: no reemplaza el XML completo de ninguna hoja; solo inyecta el
+    bloque <extLst>. Reemplazar el XML completo causaría corrupción porque
+    openpyxl regenera los índices de sharedStrings al guardar.
     """
     if not ext_lst:
         return
@@ -239,7 +246,6 @@ def _inyectar_ext_lst(
     try:
         with zipfile.ZipFile(tmp_path, 'r') as z:
             wb_xml = z.read('xl/workbook.xml').decode('utf-8')
-            # Dos pasos: primero el elemento <sheet>, luego extraer r:id
             sheet_elem = re.search(
                 rf'<sheet\b[^>]*\bname="{re.escape(nuevo_nombre)}"[^>]*>', wb_xml
             )
@@ -263,34 +269,95 @@ def _inyectar_ext_lst(
             target = tm.group(1)
             sheet_key = target.lstrip('/') if target.startswith('/') else f'xl/{target}'
 
-            # Preservar ZipInfo de cada entrada (compresión, timestamps, etc.)
             all_infos = {info.filename: info for info in z.infolist()}
             all_entries = {name: z.read(name) for name in z.namelist()}
 
-        # Modificar solo la hoja nueva: siempre reemplazar extLst completo
-        # (copy_worksheet puede haber copiado uno incompleto que bloquea la inyección)
+        # ── 1. Hoja NUEVA: inyectar extLst copiado desde Plantilla ────────────
         sheet_xml = all_entries[sheet_key].decode('utf-8')
         sheet_xml = re.sub(r'<extLst>.*?</extLst>', '', sheet_xml, flags=re.DOTALL)
         sheet_xml = sheet_xml.replace('</worksheet>', f'{ext_lst_limpio}</worksheet>', 1)
         all_entries[sheet_key] = sheet_xml.encode('utf-8')
 
-        # Restaurar externalLinks y drawings desde el archivo original:
-        # openpyxl corrompe sus cached values al hacer wb.save(), lo que genera
-        # el diálogo de reparación "We found a problem with some content".
-        # Nuestros cambios (nueva hoja semanal) no modifican estos archivos,
-        # así que es seguro restaurarlos tal cual estaban.
         if original_path and original_path.exists():
             try:
                 with zipfile.ZipFile(original_path, 'r') as z_orig:
                     orig_infos = {info.filename: info for info in z_orig.infolist()}
+                    orig_wb_xml = z_orig.read('xl/workbook.xml').decode('utf-8')
+                    orig_rels   = z_orig.read('xl/_rels/workbook.xml.rels').decode('utf-8')
+
+                    # Mapa nombre_hoja → bloque <extLst> extraído del original
+                    orig_ext_lsts: dict[str, str] = {}
+                    for sh_m in re.finditer(r'<sheet\b[^>]*>', orig_wb_xml):
+                        n_m = re.search(r'\bname="([^"]+)"', sh_m.group(0))
+                        r_m = re.search(r'\br:id="(rId\d+)"', sh_m.group(0))
+                        if not n_m or not r_m:
+                            continue
+                        hoja_o = n_m.group(1)
+                        if hoja_o == nuevo_nombre:
+                            continue
+                        rid_o = r_m.group(1)
+                        rel_m = re.search(
+                            rf'<Relationship\b(?=[^>]*\bId="{re.escape(rid_o)}")[^>]*/>', orig_rels
+                        )
+                        if not rel_m:
+                            continue
+                        tgt_m = re.search(r'\bTarget="([^"]+)"', rel_m.group(0))
+                        if not tgt_m:
+                            continue
+                        tgt = tgt_m.group(1)
+                        key_o = tgt.lstrip('/') if tgt.startswith('/') else f'xl/{tgt}'
+                        if key_o not in orig_infos:
+                            continue
+                        orig_xml = z_orig.read(key_o).decode('utf-8')
+                        ext_m = re.search(r'<extLst>.*?</extLst>', orig_xml, re.DOTALL)
+                        if ext_m:
+                            orig_ext_lsts[hoja_o] = ext_m.group(0)
+
+                    # Restaurar externalLinks y drawings (openpyxl puede corromper sus
+                    # cached values, lo que provoca el diálogo "We found a problem…")
                     for name in z_orig.namelist():
                         if 'externalLinks' in name or 'drawings' in name:
                             all_entries[name] = z_orig.read(name)
-                            all_infos[name] = orig_infos[name]
-            except Exception:
-                pass  # Si falla la restauración, continuar con lo que hay
+                            all_infos[name]   = orig_infos[name]
 
-        # Reescribir el ZIP preservando el ZipInfo original de cada entrada
+                # ── 2. Hojas EXISTENTES: inyectar solo el bloque <extLst> ──────
+                # El XML completo viene de openpyxl (índices sharedStrings correctos);
+                # solo añadimos de vuelta el <extLst> que openpyxl eliminó.
+                tmp_rels = all_entries.get('xl/_rels/workbook.xml.rels', b'').decode('utf-8')
+                tmp_wb   = all_entries.get('xl/workbook.xml', b'').decode('utf-8')
+                for sh_m in re.finditer(r'<sheet\b[^>]*>', tmp_wb):
+                    n_m = re.search(r'\bname="([^"]+)"', sh_m.group(0))
+                    r_m = re.search(r'\br:id="(rId\d+)"', sh_m.group(0))
+                    if not n_m or not r_m:
+                        continue
+                    hoja = n_m.group(1)
+                    if hoja == nuevo_nombre:
+                        continue  # Ya procesada en paso 1
+                    if hoja not in orig_ext_lsts:
+                        continue  # Sin extLst en el original
+                    rid_t = r_m.group(1)
+                    rel_m = re.search(
+                        rf'<Relationship\b(?=[^>]*\bId="{re.escape(rid_t)}")[^>]*/>', tmp_rels
+                    )
+                    if not rel_m:
+                        continue
+                    tgt_m = re.search(r'\bTarget="([^"]+)"', rel_m.group(0))
+                    if not tgt_m:
+                        continue
+                    tgt = tgt_m.group(1)
+                    key_t = tgt.lstrip('/') if tgt.startswith('/') else f'xl/{tgt}'
+                    if key_t not in all_entries:
+                        continue
+                    xml_t = all_entries[key_t].decode('utf-8')
+                    xml_t = re.sub(r'<extLst>.*?</extLst>', '', xml_t, flags=re.DOTALL)
+                    orig_ext = re.sub(r'\s+xr:uid="\{[^}]+\}"', '', orig_ext_lsts[hoja])
+                    xml_t = xml_t.replace('</worksheet>', f'{orig_ext}</worksheet>', 1)
+                    all_entries[key_t] = xml_t.encode('utf-8')
+
+            except Exception:
+                pass
+
+        # Reescribir el ZIP preservando los ZipInfo del tmp (no del original)
         tmp2 = tmp_path.with_suffix('.tmp2')
         with zipfile.ZipFile(tmp2, 'w', allowZip64=True) as z_out:
             for name, data in all_entries.items():
@@ -402,6 +469,55 @@ def _ofrecer_crear_hoja(excel_path: Path, nombre_siguiente: str) -> None:
 
 
 # ── helpers de inserción ──────────────────────────────────────────────────────
+
+def _restaurar_dvs(ws) -> None:
+    """
+    Re-aplica las validaciones de datos estándar con sqrefs de rango único.
+
+    insert_rows puede reordenar los rangos de un sqref multi-rango (ej:
+    "D2:D16 D27:D1048576") y ajusta la referencia relativa de fórmula solo
+    respecto al PRIMER rango resultante, dejando el resto de filas sin la
+    referencia correcta al Tipo. Usar sqrefs simples (D2:D1048576) evita
+    completamente este problema.
+    """
+    ws.data_validations.dataValidation = []
+
+    # Proyecto: lista filtrada según el Tipo de la misma fila (C)
+    # IF directo a los named ranges (evita INDIRECT que falla con ANCHORARRAY)
+    dv_d = DataValidation(
+        type="list",
+        formula1='IF($C2="Cliente",cliente_list,IF($C2="Interno",interno_list,IF($C2="OOO",ooo_list,"")))',
+        allow_blank=True,
+        showDropDown=False,
+        showInputMessage=True,
+        showErrorMessage=True,
+    )
+    dv_d.add("D2:D1048576")
+    ws.data_validations.append(dv_d)
+
+    # Horas: número con máximo 1 decimal, o vacío
+    dv_g = DataValidation(
+        type="custom",
+        formula1='OR(G2="",AND(ISNUMBER(G2),G2=ROUND(G2,1)))',
+        allow_blank=True,
+        showInputMessage=True,
+        showErrorMessage=True,
+    )
+    dv_g.add("G2:G1048576")
+    ws.data_validations.append(dv_g)
+
+    # Cargado en Job: solo proyectos Cliente
+    dv_j = DataValidation(
+        type="list",
+        formula1="cliente_list",
+        allow_blank=True,
+        showDropDown=False,
+        showInputMessage=True,
+        showErrorMessage=True,
+    )
+    dv_j.add("J2:J1048576")
+    ws.data_validations.append(dv_j)
+
 
 def _buscar_primera_fila_no_fds(ws, nombre: str) -> int | None:
     """
