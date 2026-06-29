@@ -140,14 +140,36 @@ def procesar_aprobacion(excel_path: Path, semana_nombre: str, output_dir: Path) 
                 "extras":      datos["extras"],
             })
 
+    # ── 3b. Prorateo de Andrea Neira ─────────────────────────────────────────
+    nombre_andrea = next(
+        (n for n in por_integrante
+         if n and "andrea" in n.lower() and "neira" in n.lower()),
+        None,
+    )
+    prorateo_andrea: float | None = None
+    if nombre_andrea:
+        print(f"\n  Se detectaron horas para {nombre_andrea}.")
+        while True:
+            raw = input(
+                f"  Ingresa el prorateo de {nombre_andrea} "
+                "(ej: 0.48 — las horas se multiplicarán por este factor): "
+            ).strip()
+            try:
+                prorateo_andrea = float(raw.replace(",", "."))
+                break
+            except ValueError:
+                print("  Ingresa un número válido (ej: 0.48).")
+
     # ── 4. Generar .txt por integrante ────────────────────────────────────────
     carpeta = output_dir / semana_nombre
     carpeta.mkdir(parents=True, exist_ok=True)
 
     print("  === MENSAJES GENERADOS ===")
     for nombre, entradas in sorted(por_integrante.items()):
-        _generar_txt_integrante(nombre, entradas, lunes, carpeta)
-        print(f"    OK: {nombre}")
+        prorateo = prorateo_andrea if nombre == nombre_andrea else None
+        _generar_txt_integrante(nombre, entradas, lunes, carpeta, prorateo)
+        sufijo = f" (prorateo ×{prorateo_andrea})" if prorateo is not None else ""
+        print(f"    OK: {nombre}{sufijo}")
 
     print(f"\n  Carpeta de salida: {carpeta}")
 
@@ -159,6 +181,7 @@ def _generar_txt_integrante(
     entradas: list[dict],
     lunes: date,
     carpeta: Path,
+    prorateo: float | None = None,
 ) -> None:
     nombre_corto = nombre.split()[0] if nombre else nombre
 
@@ -174,13 +197,16 @@ def _generar_txt_integrante(
     notas: list[str] = []
 
     for e in entradas:
+        h = e["horas"]
+        if prorateo is not None:
+            h = round(h * prorateo, 1)
         fila = sep.join([
             f"{nombre:<{ANC[0]}}",
             f"{e['proyecto']:<{ANC[1]}}",
             f"{e['engagement']:<{ANC[2]}}",
             f"{e['job']:<{ANC[3]}}",
             f"{e['comentario']:<{ANC[4]}}",
-            f"{e['horas']:<{ANC[5]}}",
+            f"{h:<{ANC[5]}}",
         ])
         filas_txt.append(fila)
         if e.get("extras"):

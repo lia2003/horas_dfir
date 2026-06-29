@@ -174,10 +174,20 @@ def _escribir_fds(
     # Re-aplicar las DVs estándar con sqrefs simples (un solo rango) corrige esto.
     _restaurar_dvs(ws)
 
-    # Post-proceso: inyectar x14:dataValidations y restaurar archivos vulnerables
+    # Actualizar ref de la tabla para cubrir las filas añadidas
+    for _tname in list(ws.tables):
+        _tbl = ws.tables[_tname]
+        if _tbl.ref:
+            _m = re.match(r'([A-Z]+\d+):([A-Z]+)\d+', _tbl.ref)
+            if _m:
+                _tbl.ref = f"{_m.group(1)}:{_m.group(2)}{ws.max_row}"
+
+    # Post-proceso: siempre restaurar x14:dataValidations en todas las hojas.
+    # Cuando hoja_nueva=True también inyecta el extLst de Plantilla en la hoja nueva.
+    # Cuando hoja_nueva=False el target ya existe pero openpyxl borró su extLst al
+    # guardar, así que se re-inyecta igual (usando el extLst de Plantilla como fuente).
     def _post(tmp):
-        if hoja_nueva:
-            _inyectar_ext_lst(tmp, nombre_siguiente, ext_lst, excel_path)
+        _inyectar_ext_lst(tmp, nombre_siguiente, ext_lst, excel_path)
 
     guardar_excel(wb, excel_path, post_process=_post)
     wb.close()
