@@ -160,15 +160,39 @@ def procesar_aprobacion(excel_path: Path, semana_nombre: str, output_dir: Path) 
             except ValueError:
                 print("  Ingresa un número válido (ej: 0.48).")
 
+    nombre_daniel = next(
+        (n for n in por_integrante
+         if n and "daniel" in n.lower() and "cabrera" in n.lower()),
+        None,
+    )
+    prorateo_daniel: float | None = None
+    if nombre_daniel:
+        print(f"\n  Se detectaron horas para {nombre_daniel}.")
+        while True:
+            raw = input(
+                f"  Ingresa el prorateo de {nombre_daniel} "
+                "(ej: 0.48 — las horas se multiplicarán por este factor): "
+            ).strip()
+            try:
+                prorateo_daniel = float(raw.replace(",", "."))
+                break
+            except ValueError:
+                print("  Ingresa un número válido (ej: 0.48).")
+
     # ── 4. Generar .txt por integrante ────────────────────────────────────────
     carpeta = output_dir / semana_nombre
     carpeta.mkdir(parents=True, exist_ok=True)
 
     print("  === MENSAJES GENERADOS ===")
     for nombre, entradas in sorted(por_integrante.items()):
-        prorateo = prorateo_andrea if nombre == nombre_andrea else None
+        if nombre == nombre_andrea:
+            prorateo = prorateo_andrea
+        elif nombre == nombre_daniel:
+            prorateo = prorateo_daniel
+        else:
+            prorateo = None
         _generar_txt_integrante(nombre, entradas, lunes, carpeta, prorateo)
-        sufijo = f" (prorateo ×{prorateo_andrea})" if prorateo is not None else ""
+        sufijo = f" (prorateo ×{prorateo})" if prorateo is not None else ""
         print(f"    OK: {nombre}{sufijo}")
 
     print(f"\n  Carpeta de salida: {carpeta}")

@@ -51,8 +51,9 @@ def generar_resumen(excel_path: Path, semana_nombre: str, output_dir: Path) -> N
         print("  No hay filas en Estado='Cargado' para generar el resumen.")
         return
 
-    # ── 2. Detectar Andrea Neira y pedir prorateo ─────────────────────────────
+    # ── 2. Detectar personas con prorateo y pedirlo ───────────────────────────
     nombres_en_datos = {f["nombre"] for f in filas_cargadas if f["nombre"]}
+
     nombre_andrea = next(
         (n for n in nombres_en_datos
          if n and "andrea" in n.lower() and "neira" in n.lower()),
@@ -71,6 +72,28 @@ def generar_resumen(excel_path: Path, semana_nombre: str, output_dir: Path) -> N
                 break
             except ValueError:
                 print("  Ingresa un número válido (ej: 0.48).")
+
+    nombre_daniel = next(
+        (n for n in nombres_en_datos
+         if n and "daniel" in n.lower() and "cabrera" in n.lower()),
+        None,
+    )
+    prorateo_daniel: float | None = None
+    if nombre_daniel:
+        print(f"\n  Se detectaron horas cargadas para {nombre_daniel}.")
+        while True:
+            raw = input(
+                f"  Prorateo de {nombre_daniel} "
+                "(ej: 0.48 — sus horas se multiplicarán): "
+            ).strip()
+            try:
+                prorateo_daniel = float(raw.replace(",", "."))
+                break
+            except ValueError:
+                print("  Ingresa un número válido (ej: 0.48).")
+
+    # Rate de Intern buscado de forma case-insensitive en Rates FY26
+    intern_rate = next((v for k, v in rates.items() if "intern" in k.lower()), "")
 
     # ── 3. Acumular horas por (nombre, rank, engagement) ─────────────────────
     # Clave: (nombre, rank, engagement) → horas totales originales
@@ -138,10 +161,15 @@ def generar_resumen(excel_path: Path, semana_nombre: str, output_dir: Path) -> N
 
         if nombre_andrea and nombre == nombre_andrea and prorateo_andrea is not None:
             horas = round(h_orig * prorateo_andrea, 1)
+        elif nombre_daniel and nombre == nombre_daniel and prorateo_daniel is not None:
+            horas = round(h_orig * prorateo_daniel, 1)
         else:
             horas = h_orig
 
-        nsr_rate    = rates.get(rank, "")
+        if nombre_daniel and nombre == nombre_daniel:
+            nsr_rate = intern_rate
+        else:
+            nsr_rate = rates.get(rank, "")
         person_name = f"{rank} - {nombre}" if rank else nombre
 
         ws_out.cell(row=fila_actual, column=1, value=nsr_rate).alignment = center_aln
@@ -161,10 +189,16 @@ def generar_resumen(excel_path: Path, semana_nombre: str, output_dir: Path) -> N
         if nombre_andrea and nombre == nombre_andrea and prorateo_andrea is not None:
             h = round(h_orig * prorateo_andrea, 1)
             label_h = f"{h:.1f}h  (×{prorateo_andrea})"
+        elif nombre_daniel and nombre == nombre_daniel and prorateo_daniel is not None:
+            h = round(h_orig * prorateo_daniel, 1)
+            label_h = f"{h:.1f}h  (×{prorateo_daniel})"
         else:
             h = h_orig
             label_h = f"{h:.1f}h"
-        nsr = rates.get(rank, "?")
+        if nombre_daniel and nombre == nombre_daniel:
+            nsr = intern_rate
+        else:
+            nsr = rates.get(rank, "?")
         print(f"  [{nsr}]  {rank} - {nombre:<28} {eng:<20} {label_h}")
 
     print(f"\n  Guardado en: {archivo}")
