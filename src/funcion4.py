@@ -1,10 +1,15 @@
 """
-Función 4 — Resumen semanal para RD (Excel agrupado por Engagement ID).
+Función 4 — Resumen semanal para RD (Excel plano por persona-engagement).
 
 Filtra filas con Estado='Cargado' y Tipo='Cliente' (incluye 1. Lunes (FDS)).
-Agrupa por engagement ID → lista de personas con sus horas.
 Si Andrea Neira tiene horas, pregunta su prorateo y lo aplica.
 Guarda el resultado en Resumen_RD.xlsx en la carpeta de salida de la semana.
+
+Columnas del Excel de salida:
+  A: NSR Rate       — multiplicador de Rates FY26 según el rank de la persona
+  B: Person Name    — "Rank - Nombre completo"
+  C: Engagement Number
+  D: Hours
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ from .excel_reader import (
     PROYECTOS_EXCLUIDOS,
     get_semana_rows,
     load_jobs,
+    load_rates,
     parse_semana_fecha,
 )
 
@@ -29,6 +35,7 @@ def generar_resumen(excel_path: Path, semana_nombre: str, output_dir: Path) -> N
 
     filas = get_semana_rows(excel_path, semana_nombre)
     jobs  = load_jobs(excel_path)
+    rates = load_rates(excel_path)
 
     # ── 1. Filtrar: Cargado + Cliente + no excluidos ──────────────────────────
     filas_cargadas = [
@@ -65,13 +72,14 @@ def generar_resumen(excel_path: Path, semana_nombre: str, output_dir: Path) -> N
             except ValueError:
                 print("  Ingresa un número válido (ej: 0.48).")
 
-    # ── 3. Agrupar por engagement → persona ──────────────────────────────────
-    # resumen[engagement][nombre] = horas_totales (originales)
-    resumen: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    # ── 3. Acumular horas por (nombre, rank, engagement) ─────────────────────
+    # Clave: (nombre, rank, engagement) → horas totales originales
+    datos: dict[tuple[str, str, str], float] = defaultdict(float)
     sin_engagement: list[dict] = []
 
     for f in filas_cargadas:
         nombre = f["nombre"] or ""
+        rank   = f["rank"]   or ""
         proy   = (f["proyecto"] or "").strip()
         info   = jobs.get(proy, {})
         eng    = (info.get("engagement") or "").strip()
@@ -80,7 +88,7 @@ def generar_resumen(excel_path: Path, semana_nombre: str, output_dir: Path) -> N
             sin_engagement.append(f)
             eng = f"SIN ENGAGEMENT ({proy})"
 
-        resumen[eng][nombre] += f["horas"]
+        datos[(nombre, rank, eng)] += f["horas"]
 
     # ── 4. Avisar proyectos sin engagement ────────────────────────────────────
     if sin_engagement:
@@ -106,93 +114,57 @@ def generar_resumen(excel_path: Path, semana_nombre: str, output_dir: Path) -> N
     # Estilos
     hdr_font   = Font(bold=True, color="FFFFFF")
     hdr_fill   = PatternFill("solid", fgColor="1F4E79")
-    eng_font   = Font(bold=True)
-    eng_fill   = PatternFill("solid", fgColor="D6E4F0")
-    tot_font   = Font(bold=True)
-    tot_fill   = PatternFill("solid", fgColor="F2F2F2")
     center_aln = Alignment(horizontal="center", vertical="center")
     left_aln   = Alignment(horizontal="left",   vertical="center")
     right_aln  = Alignment(horizontal="right",  vertical="center")
 
     # Encabezado
-    ws_out.append(["Engagement ID", "Nombre", "Horas"])
-    for col_idx in range(1, 4):
-        cell = ws_out.cell(row=1, column=col_idx)
+    headers = ["NSR Rate", "Person Name", "Engagement Number", "Hours"]
+    for col_idx, titulo in enumerate(headers, start=1):
+        cell = ws_out.cell(row=1, column=col_idx, value=titulo)
         cell.font      = hdr_font
         cell.fill      = hdr_fill
         cell.alignment = center_aln
 
-    ws_out.column_dimensions["A"].width = 28
-    ws_out.column_dimensions["B"].width = 30
-    ws_out.column_dimensions["C"].width = 12
+    ws_out.column_dimensions["A"].width = 12
+    ws_out.column_dimensions["B"].width = 38
+    ws_out.column_dimensions["C"].width = 22
+    ws_out.column_dimensions["D"].width = 10
 
-    total_global = 0.0
-    fila_actual  = 2
+    # Filas de datos — ordenadas por engagement y luego por nombre
+    fila_actual = 2
+    for (nombre, rank, eng) in sorted(datos.keys(), key=lambda x: (x[2], x[0])):
+        h_orig = datos[(nombre, rank, eng)]
 
-    for eng in sorted(resumen.keys()):
-        personas = resumen[eng]
+        if nombre_andrea and nombre == nombre_andrea and prorateo_andrea is not None:
+            horas = round(h_orig * prorateo_andrea, 1)
+        else:
+            horas = h_orig
 
-        # Subtotal del engagement (con prorateo aplicado)
-        subtotal = sum(
-            round(h * prorateo_andrea, 1) if (nombre_andrea and n == nombre_andrea and prorateo_andrea is not None) else h
-            for n, h in personas.items()
-        )
-        total_global += subtotal
+        nsr_rate    = rates.get(rank, "")
+        person_name = f"{rank} - {nombre}" if rank else nombre
 
-        # Fila de cabecera de engagement
-        ws_out.cell(row=fila_actual, column=1, value=eng).font      = eng_font
-        ws_out.cell(row=fila_actual, column=1).fill      = eng_fill
-        ws_out.cell(row=fila_actual, column=1).alignment = left_aln
-        ws_out.cell(row=fila_actual, column=2, value="").fill       = eng_fill
-        ws_out.cell(row=fila_actual, column=3, value=subtotal)
-        ws_out.cell(row=fila_actual, column=3).font      = eng_font
-        ws_out.cell(row=fila_actual, column=3).fill      = eng_fill
-        ws_out.cell(row=fila_actual, column=3).alignment = right_aln
-        ws_out.cell(row=fila_actual, column=3).number_format = "0.0"
+        ws_out.cell(row=fila_actual, column=1, value=nsr_rate).alignment = center_aln
+        ws_out.cell(row=fila_actual, column=2, value=person_name).alignment = left_aln
+        ws_out.cell(row=fila_actual, column=3, value=eng).alignment = left_aln
+        c = ws_out.cell(row=fila_actual, column=4, value=horas)
+        c.alignment    = right_aln
+        c.number_format = "0.0"
         fila_actual += 1
-
-        # Filas de persona
-        for nombre in sorted(personas.keys()):
-            h_orig = personas[nombre]
-            if nombre_andrea and nombre == nombre_andrea and prorateo_andrea is not None:
-                h_mostrar = round(h_orig * prorateo_andrea, 1)
-                label = f"{nombre} (×{prorateo_andrea})"
-            else:
-                h_mostrar = h_orig
-                label = nombre
-
-            ws_out.cell(row=fila_actual, column=1, value="").alignment = left_aln
-            ws_out.cell(row=fila_actual, column=2, value=label).alignment = left_aln
-            ws_out.cell(row=fila_actual, column=3, value=h_mostrar)
-            ws_out.cell(row=fila_actual, column=3).alignment    = right_aln
-            ws_out.cell(row=fila_actual, column=3).number_format = "0.0"
-            fila_actual += 1
-
-    # Fila de total global
-    ws_out.cell(row=fila_actual, column=1, value="TOTAL").font      = tot_font
-    ws_out.cell(row=fila_actual, column=1).fill      = tot_fill
-    ws_out.cell(row=fila_actual, column=1).alignment = left_aln
-    ws_out.cell(row=fila_actual, column=2, value="").fill            = tot_fill
-    ws_out.cell(row=fila_actual, column=3, value=round(total_global, 1))
-    ws_out.cell(row=fila_actual, column=3).font      = tot_font
-    ws_out.cell(row=fila_actual, column=3).fill      = tot_fill
-    ws_out.cell(row=fila_actual, column=3).alignment = right_aln
-    ws_out.cell(row=fila_actual, column=3).number_format = "0.0"
 
     wb_out.save(archivo)
 
     # ── 6. Mostrar resumen en pantalla ────────────────────────────────────────
     print(f"\n  === RESUMEN SEMANAL - {semana_nombre} ===\n")
-    for eng in sorted(resumen.keys()):
-        print(f"  {eng}")
-        for nombre in sorted(resumen[eng].keys()):
-            h_orig = resumen[eng][nombre]
-            if nombre_andrea and nombre == nombre_andrea and prorateo_andrea is not None:
-                h = round(h_orig * prorateo_andrea, 1)
-                print(f"    {nombre:<30} {h:>6.1f}h  (×{prorateo_andrea})")
-            else:
-                print(f"    {nombre:<30} {h_orig:>6.1f}h")
-        print()
+    for (nombre, rank, eng) in sorted(datos.keys(), key=lambda x: (x[2], x[0])):
+        h_orig = datos[(nombre, rank, eng)]
+        if nombre_andrea and nombre == nombre_andrea and prorateo_andrea is not None:
+            h = round(h_orig * prorateo_andrea, 1)
+            label_h = f"{h:.1f}h  (×{prorateo_andrea})"
+        else:
+            h = h_orig
+            label_h = f"{h:.1f}h"
+        nsr = rates.get(rank, "?")
+        print(f"  [{nsr}]  {rank} - {nombre:<28} {eng:<20} {label_h}")
 
-    print(f"  TOTAL GLOBAL: {round(total_global, 1)}h")
     print(f"\n  Guardado en: {archivo}")
