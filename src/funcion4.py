@@ -154,9 +154,21 @@ def generar_resumen(excel_path: Path, semana_nombre: str, output_dir: Path) -> N
     ws_out.column_dimensions["C"].width = 22
     ws_out.column_dimensions["D"].width = 10
 
-    # Filas de datos — ordenadas por engagement y luego por nombre
+    def _nsr_val(nombre: str, rank: str) -> float:
+        v = intern_rate if (nombre_daniel and nombre == nombre_daniel) else rates.get(rank, 0)
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            return 0.0
+
+    claves_ordenadas = sorted(
+        datos.keys(),
+        key=lambda x: -_nsr_val(x[0], x[1]),
+    )
+
+    # Filas de datos — ordenadas de mayor a menor NSR Rate
     fila_actual = 2
-    for (nombre, rank, eng) in sorted(datos.keys(), key=lambda x: (x[2], x[0])):
+    for (nombre, rank, eng) in claves_ordenadas:
         h_orig = datos[(nombre, rank, eng)]
 
         if nombre_andrea and nombre == nombre_andrea and prorateo_andrea is not None:
@@ -184,7 +196,7 @@ def generar_resumen(excel_path: Path, semana_nombre: str, output_dir: Path) -> N
 
     # ── 6. Mostrar resumen en pantalla ────────────────────────────────────────
     print(f"\n  === RESUMEN SEMANAL - {semana_nombre} ===\n")
-    for (nombre, rank, eng) in sorted(datos.keys(), key=lambda x: (x[2], x[0])):
+    for (nombre, rank, eng) in claves_ordenadas:
         h_orig = datos[(nombre, rank, eng)]
         if nombre_andrea and nombre == nombre_andrea and prorateo_andrea is not None:
             h = round(h_orig * prorateo_andrea, 1)
