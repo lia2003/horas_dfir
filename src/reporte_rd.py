@@ -43,32 +43,49 @@ RATE_ANDREA = 361
 MARCA_SI = "☑"  # ☑
 MARCA_NO = "☐"  # ☐
 
-# Rank fijo por persona para el Reporte_RD, clave = "Apellido, Nombre(s)"
-# (salida de _apellido_nombre). Algunos proyectos (ej. internos) registran
-# a la misma persona con un rank distinto/informal en la hoja semanal
-# (ej. "Incharge" en vez de "STAFF 2"); para el reporte a RD siempre se usa
-# el rank oficial de este roster, sin importar lo que diga esa fila.
-ROSTER_RANKS: dict[str, str] = {
-    "Delgado, Rodrigo Eugenio":   "SENIOR MANAGER 1",
-    "Beuzeville, Rodrigo Arturo": "SENIOR 2",
-    "Rojas, Marcelo Jon":         "STAFF 2",
-    "Barco, Alvaro Joaquin":      "STAFF 1",
-    "Zambrano, Manuel Nazaret":   "STAFF 1",
-    "Carrion, Marcelo Andre":     "STAFF 1",
-    "Neira, Andrea Valeria":      "STAFF 1",
-    "Cabrera, Daniel Sebastian":  "INTERN (CS)",
-    "Arancibia, Lia Mariel":      "INTERN (CS)",
-}
+# Texto EXACTO de "Person Name" (rank + apellido, nombre) para cada persona
+# conocida del equipo, fijo sin importar cómo esté escrito el rank o el
+# nombre en la fila de la hoja semanal de ese proyecto (algunos proyectos
+# registran a la misma persona con un rank/formato distinto, ej. "Incharge"
+# en vez de "STAFF 2"). Se matchea buscando que AMBAS palabras clave (nombre
+# y apellido) estén contenidas en el nombre crudo de la hoja semanal.
+ROSTER_PERSON_NAME: list[tuple[tuple[str, str], str]] = [
+    (("rodrigo", "delgado"),    "SENIOR MANAGER 1 - Delgado, Rodrigo Eugenio"),
+    (("rodrigo", "beuzeville"), "SENIOR 2 - Beuzeville, Rodrigo Arturo"),
+    (("marcelo", "rojas"),      "STAFF 2 - Rojas, Marcelo Jon"),
+    (("alvaro", "barco"),       "STAFF 1 - Barco, Alvaro Joaquin"),
+    (("manuel", "zambrano"),    "STAFF 1 - Zambrano, Manuel Nazaret"),
+    (("marcelo", "carrion"),    "STAFF 1 - Carrion, Marcelo Andre"),
+    (("andrea", "neira"),       "STAFF 1 - Neira, Andrea Valeria"),
+    (("daniel", "cabrera"),     "INTERN (CS) - Cabrera, Daniel Sebastian"),
+    (("lia", "arancibia"),      "INTERN (CS) - Arancibia, Lia Mariel"),
+]
 
 
 def _apellido_nombre(nombre: str) -> str:
-    """'Nombre(s) Apellido' (como está en la hoja semanal) -> 'Apellido, Nombre(s)'."""
+    """'Nombre(s) Apellido' (como está en la hoja semanal) -> 'Apellido, Nombre(s)'.
+
+    Fallback solo para personas que no están en ROSTER_PERSON_NAME.
+    """
     partes = nombre.split()
     if len(partes) < 2:
         return nombre
     apellido = partes[-1]
     resto = " ".join(partes[:-1])
     return f"{apellido}, {resto}"
+
+
+def _person_name_fijo(nombre: str) -> tuple[str, str] | None:
+    """Busca a la persona en ROSTER_PERSON_NAME por nombre y apellido.
+
+    Retorna (rank, texto_completo) si hay match, o None si no está en la lista.
+    """
+    n = (nombre or "").lower()
+    for (clave1, clave2), texto in ROSTER_PERSON_NAME:
+        if clave1 in n and clave2 in n:
+            rank = texto.split(" - ", 1)[0]
+            return rank, texto
+    return None
 
 
 def generar_reporte_rd(
@@ -106,18 +123,32 @@ def generar_reporte_rd(
         except (ValueError, TypeError):
             eaf = 0.0
         for nombre, horas in datos["horas_aprobadas"].items():
-            nombre_fmt = _apellido_nombre(nombre)
-            rank = ROSTER_RANKS.get(nombre_fmt, rank_por_nombre.get(nombre, ""))
+            fijo = _person_name_fijo(nombre)
+            if fijo:
+                rank, person = fijo
+            else:
+                rank = rank_por_nombre.get(nombre, "")
+                nombre_fmt = _apellido_nombre(nombre)
+                person = f"{rank} - {nombre_fmt}" if rank else nombre_fmt
+
             factor = prorateos.get(nombre)
-            h = round(horas * factor, 1) if factor is not None else horas
+            if nombre_andrea and nombre == nombre_andrea and factor is not None:
+                # Para Andrea el prorrateo NO se aplica a las Horas: se deja
+                # como factor explícito dentro de la fórmula del SUBTOTAL.
+                h = horas
+                prorateo_formula = factor
+            else:
+                h = round(horas * factor, 1) if factor is not None else horas
+                prorateo_formula = None
             filas.append({
-                "rate":       _rate(nombre, rank),
-                "person":     f"{rank} - {nombre_fmt}" if rank else nombre_fmt,
-                "engagement": eng,
-                "horas":      h,
-                "proyecto":   proy,
-                "eaf":        eaf,
-                "aprobada":   aprobada,
+                "rate":              _rate(nombre, rank),
+                "person":            person,
+                "engagement":        eng,
+                "horas":             h,
+                "proyecto":          proy,
+                "eaf":               eaf,
+                "aprobada":          aprobada,
+                "prorateo_formula":  prorateo_formula,
             })
 
     if not filas:
@@ -167,10 +198,10 @@ def generar_reporte_rd(
         c_eaf = ws.cell(row=fila_actual, column=7, value=f["eaf"])
         c_eaf.alignment = center_aln
         c_eaf.number_format = "0.000"
-        c_sub = ws.cell(
-            row=fila_actual, column=8,
-            value=f"=A{fila_actual}*D{fila_actual}*(1+G{fila_actual})",
-        )
+        formula_sub = f"=A{fila_actual}*D{fila_actual}*(1+G{fila_actual})"
+        if f["prorateo_formula"] is not None:
+            formula_sub += f"*{f['prorateo_formula']}"
+        c_sub = ws.cell(row=fila_actual, column=8, value=formula_sub)
         c_sub.alignment = center_aln
         c_sub.number_format = "0.00"
         fila_actual += 1
