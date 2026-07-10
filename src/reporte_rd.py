@@ -1,5 +1,10 @@
-"""Generación de Reporte_RD.xlsx a partir de las horas aprobadas por los
-gerentes en la Función 3 (antes de que el equipo cargue horas en el Excel).
+"""Generación de Reporte_RD.xlsx a partir de las horas de la Función 3.
+
+Incluye TODOS los proyectos Cliente de la semana, tanto los que se mandan
+en el mensaje al equipo (aprobados manualmente por gerente, columna
+APROBADAS = ☑) como los que se marcaron como excluidos del mensaje
+(no pasan por aprobación manual, columna APROBADAS = ☐ por defecto pero
+editable en Excel).
 
 Agrega (o reemplaza si ya existía) una hoja nombrada con la fecha del lunes
 de la semana activa (DD-MM-YYYY) en el archivo indicado por 'reporte_rd_path'
@@ -37,6 +42,23 @@ RATE_ANDREA = 361
 # checkboxes reales de formulario vía openpyxl).
 MARCA_SI = "☑"  # ☑
 MARCA_NO = "☐"  # ☐
+
+# Rank fijo por persona para el Reporte_RD, clave = "Apellido, Nombre(s)"
+# (salida de _apellido_nombre). Algunos proyectos (ej. internos) registran
+# a la misma persona con un rank distinto/informal en la hoja semanal
+# (ej. "Incharge" en vez de "STAFF 2"); para el reporte a RD siempre se usa
+# el rank oficial de este roster, sin importar lo que diga esa fila.
+ROSTER_RANKS: dict[str, str] = {
+    "Delgado, Rodrigo Eugenio":   "SENIOR MANAGER 1",
+    "Beuzeville, Rodrigo Arturo": "SENIOR 2",
+    "Rojas, Marcelo Jon":         "STAFF 2",
+    "Barco, Alvaro Joaquin":      "STAFF 1",
+    "Zambrano, Manuel Nazaret":   "STAFF 1",
+    "Carrion, Marcelo Andre":     "STAFF 1",
+    "Neira, Andrea Valeria":      "STAFF 1",
+    "Cabrera, Daniel Sebastian":  "INTERN (CS)",
+    "Arancibia, Lia Mariel":      "INTERN (CS)",
+}
 
 
 def _apellido_nombre(nombre: str) -> str:
@@ -77,16 +99,17 @@ def generar_reporte_rd(
     filas: list[dict] = []
     for proy, datos in datos_aprobados.items():
         eng = datos["engagement"]
+        aprobada = datos.get("aprobada", True)
         info_job = jobs.get(proy, {})
         try:
             eaf = float(info_job.get("eaf") or 0)
         except (ValueError, TypeError):
             eaf = 0.0
         for nombre, horas in datos["horas_aprobadas"].items():
-            rank = rank_por_nombre.get(nombre, "")
+            nombre_fmt = _apellido_nombre(nombre)
+            rank = ROSTER_RANKS.get(nombre_fmt, rank_por_nombre.get(nombre, ""))
             factor = prorateos.get(nombre)
             h = round(horas * factor, 1) if factor is not None else horas
-            nombre_fmt = _apellido_nombre(nombre)
             filas.append({
                 "rate":       _rate(nombre, rank),
                 "person":     f"{rank} - {nombre_fmt}" if rank else nombre_fmt,
@@ -94,6 +117,7 @@ def generar_reporte_rd(
                 "horas":      h,
                 "proyecto":   proy,
                 "eaf":        eaf,
+                "aprobada":   aprobada,
             })
 
     if not filas:
@@ -137,7 +161,8 @@ def generar_reporte_rd(
         c_h = ws.cell(row=fila_actual, column=4, value=f["horas"])
         c_h.alignment = center_aln
         c_h.number_format = "0.0"
-        ws.cell(row=fila_actual, column=5, value=MARCA_SI).alignment = center_aln
+        marca = MARCA_SI if f["aprobada"] else MARCA_NO
+        ws.cell(row=fila_actual, column=5, value=marca).alignment = center_aln
         ws.cell(row=fila_actual, column=6, value=f["proyecto"]).alignment = left_aln
         c_eaf = ws.cell(row=fila_actual, column=7, value=f["eaf"])
         c_eaf.alignment = center_aln

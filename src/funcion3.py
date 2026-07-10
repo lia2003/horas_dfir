@@ -1,13 +1,19 @@
 """
-Función 3 — Mensajes al equipo tras aprobación de gerentes.
+Función 3 — Mensajes al equipo tras aprobación de gerentes + Reporte_RD.
 
 Flujo:
   1. Muestra las horas solicitadas por proyecto / persona (de la hoja semanal).
-  2. El usuario ingresa, por proyecto: engagement, job number y horas aprobadas
-     por persona (puede diferir de lo solicitado).
-  3. Opcionalmente el usuario indica consideraciones extra por proyecto.
-  4. Genera un .txt por integrante con la tabla de horas aprobadas lista para
+  2. Permite marcar proyectos que esta semana NO se van a cargar (sin mensaje
+     al equipo). Esos proyectos igual se incluyen en el Reporte_RD, con los
+     datos tal cual están en el Excel y la columna APROBADAS sin marcar,
+     porque no pasan por la aprobación manual de gerente.
+  3. Para el resto de los proyectos, el usuario ingresa: engagement, job
+     number y horas aprobadas por persona (puede diferir de lo solicitado).
+  4. Opcionalmente el usuario indica consideraciones extra por proyecto.
+  5. Genera un .txt por integrante con la tabla de horas aprobadas lista para
      enviar (el usuario lo copia/pega o lo envía manualmente).
+  6. Genera/actualiza Reporte_RD.xlsx con TODOS los proyectos de la semana
+     (excluidos o no), listo para enviar al jefe de RD.
 
 No se modifica el Excel en esta función.
 """
@@ -71,11 +77,12 @@ def procesar_aprobacion(
     for i, p in enumerate(proyectos_lista, start=1):
         print(f"    {i}. {p}")
     excl_input = input(
-        "\n  Proyectos a EXCLUIR esta semana (numeros separados por coma, "
-        "Enter = ninguno): "
+        "\n  Proyectos a EXCLUIR del mensaje al equipo esta semana "
+        "(numeros separados por coma, Enter = ninguno): "
     ).strip()
+
+    proyectos_excluidos_semana: set[str] = set()
     if excl_input:
-        proyectos_excluidos_semana: set[str] = set()
         for tok in excl_input.split(","):
             tok = tok.strip()
             if not tok:
@@ -89,18 +96,16 @@ def procesar_aprobacion(
             except ValueError:
                 print(f"    Aviso: '{tok}' no es un número válido, ignorado.")
         if proyectos_excluidos_semana:
-            print("\n  Proyectos excluidos esta semana (sin correo ni reporte):")
+            print(
+                "\n  Proyectos excluidos del mensaje al equipo esta semana "
+                "(igual se incluyen en Reporte_RD, sin aprobación manual):"
+            )
             for p in sorted(proyectos_excluidos_semana):
                 print(f"    - {p}")
-                por_proyecto.pop(p, None)
-
-    if not por_proyecto:
-        print("\n  Todos los proyectos de la semana fueron excluidos. Nada que procesar.")
-        return
 
     # ── 2. Ingresar respuestas de gerentes por proyecto ───────────────────────
     print("\n  === INGRESO DE RESPUESTAS DE GERENTES ===")
-    print("  Para cada proyecto ingresa el engagement, job y horas aprobadas.\n")
+    print("  Para cada proyecto no excluido, ingresa el engagement, job y horas aprobadas.\n")
 
     datos_aprobados: dict[str, dict] = {}
 
@@ -108,12 +113,7 @@ def procesar_aprobacion(
         info_job = jobs.get(proy, {})
         eng_default = info_job.get("engagement") or ""
 
-        print(f"  {'-' * 55}")
-        print(f"  Proyecto : {proy}")
-        print(f"  Gerente  : {info_job.get('gerente', 'N/A')}")
-        print()
-
-        # Horas solicitadas por persona
+        # Horas solicitadas por persona (se calcula siempre, se use o no)
         horas_solicitadas: dict[str, float] = defaultdict(float)
         tipo_act_por_persona: dict[str, str] = {}
         for f in fps:
@@ -121,6 +121,27 @@ def procesar_aprobacion(
             horas_solicitadas[nombre] += f["horas"]
             if nombre not in tipo_act_por_persona and f["tipo_actividad"]:
                 tipo_act_por_persona[nombre] = f["tipo_actividad"]
+
+        if proy in proyectos_excluidos_semana:
+            # No se manda mensaje al equipo por este proyecto; se incluye
+            # igual en el Reporte_RD con los datos tal cual, sin pedir
+            # aprobación manual de gerente.
+            print(f"  {'-' * 55}")
+            print(f"  Proyecto : {proy}  (excluido del mensaje -> va a Reporte_RD sin aprobar)")
+            datos_aprobados[proy] = {
+                "engagement":        eng_default or "SIN ENGAGEMENT",
+                "job":               "0000",
+                "horas_aprobadas":   dict(horas_solicitadas),
+                "tipo_act_persona":  tipo_act_por_persona,
+                "extras":            None,
+                "aprobada":          False,
+            }
+            continue
+
+        print(f"  {'-' * 55}")
+        print(f"  Proyecto : {proy}")
+        print(f"  Gerente  : {info_job.get('gerente', 'N/A')}")
+        print()
 
         print("  Solicitado:")
         for nombre, h in sorted(horas_solicitadas.items()):
@@ -170,14 +191,17 @@ def procesar_aprobacion(
             "horas_aprobadas":   horas_aprobadas,
             "tipo_act_persona":  tipo_act_por_persona,
             "extras":            extra or None,
+            "aprobada":          True,
         }
         print()
 
-    # ── 3. Construir tabla por integrante ─────────────────────────────────────
+    # ── 3. Construir tabla por integrante (solo proyectos NO excluidos) ───────
     # { nombre: [ {proyecto, engagement, job, comentario, horas, extras} ] }
     por_integrante: dict[str, list[dict]] = defaultdict(list)
 
     for proy, datos in datos_aprobados.items():
+        if proy in proyectos_excluidos_semana:
+            continue
         for nombre, horas in datos["horas_aprobadas"].items():
             por_integrante[nombre].append({
                 "proyecto":    proy,
@@ -188,9 +212,10 @@ def procesar_aprobacion(
                 "extras":      datos["extras"],
             })
 
-    # ── 3b. Prorateo de Andrea Neira ─────────────────────────────────────────
+    # ── 3b. Prorateo de Andrea Neira (sobre todos los proyectos, incluidos
+    #        los excluidos del mensaje, ya que igual entran al Reporte_RD) ────
     nombre_andrea = next(
-        (n for n in por_integrante
+        (n for n in rank_por_nombre
          if n and "andrea" in n.lower() and "neira" in n.lower()),
         None,
     )
@@ -209,7 +234,7 @@ def procesar_aprobacion(
                 print("  Ingresa un número válido (ej: 0.48).")
 
     nombre_daniel = next(
-        (n for n in por_integrante
+        (n for n in rank_por_nombre
          if n and "daniel" in n.lower() and "cabrera" in n.lower()),
         None,
     )
@@ -232,6 +257,8 @@ def procesar_aprobacion(
     carpeta.mkdir(parents=True, exist_ok=True)
 
     print("  === MENSAJES GENERADOS ===")
+    if not por_integrante:
+        print("    (Todos los proyectos quedaron excluidos del mensaje al equipo esta semana.)")
     for nombre, entradas in sorted(por_integrante.items()):
         if nombre == nombre_andrea:
             prorateo = prorateo_andrea
