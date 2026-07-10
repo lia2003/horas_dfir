@@ -28,7 +28,7 @@ from src.funcion4 import generar_resumen
 
 # ── Carga de configuración ────────────────────────────────────────────────────
 
-def cargar_config() -> tuple[Path, Path]:
+def cargar_config() -> tuple[Path, Path, Path]:
     config_path = Path(__file__).parent / "config.json"
     if not config_path.exists():
         print(f"ERROR: No se encontró config.json en {config_path.parent}")
@@ -37,12 +37,15 @@ def cargar_config() -> tuple[Path, Path]:
         cfg = json.load(fh)
     excel_path = Path(cfg["excel_path"])
     output_dir = Path(cfg["output_dir"])
+    reporte_rd_path = Path(
+        cfg.get("reporte_rd_path", r"C:\Users\liama\Downloads\Reporte_RD.xlsx")
+    )
     if not excel_path.exists():
         print(f"ERROR: El archivo Excel no existe:\n  {excel_path}")
         print("Revisa la ruta 'excel_path' en config.json.")
         sys.exit(1)
     output_dir.mkdir(parents=True, exist_ok=True)
-    return excel_path, output_dir
+    return excel_path, output_dir, reporte_rd_path
 
 
 # ── Selección de semana ───────────────────────────────────────────────────────
@@ -101,9 +104,10 @@ MENU = """
 
 def main() -> None:
     print("\n  Cargando configuración...")
-    excel_path, output_dir = cargar_config()
-    print(f"  Excel : {excel_path}")
-    print(f"  Salida: {output_dir}")
+    excel_path, output_dir, reporte_rd_path = cargar_config()
+    print(f"  Excel      : {excel_path}")
+    print(f"  Salida     : {output_dir}")
+    print(f"  Reporte RD : {reporte_rd_path}")
 
     semana_sel = seleccionar_semana(excel_path)
     lunes_sel  = parse_semana_fecha(semana_sel)
@@ -126,7 +130,7 @@ def main() -> None:
 
         elif opcion == "3":
             print("\n── Función 3: Mensajes al equipo ──────────────────────")
-            procesar_aprobacion(excel_path, semana_sel, output_dir)
+            procesar_aprobacion(excel_path, semana_sel, output_dir, reporte_rd_path)
 
         elif opcion == "4":
             print("\n── Función 4: Resumen para RD ────────────────────────")

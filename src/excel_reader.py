@@ -90,11 +90,15 @@ def get_semana_rows(excel_path: Path, semana_nombre: str) -> list[dict]:
 
 def load_jobs(excel_path: Path) -> dict[str, dict]:
     """
-    Lee 'Jobs FY26'. Retorna dict {proyecto_strip: {...}}.
+    Lee la hoja de Jobs ('Jobs', o 'Jobs FY26' si esa no existe).
+    Retorna dict {proyecto_strip: {...}}.
     El engagement se normaliza con .strip().
     """
     wb = openpyxl.load_workbook(excel_path, read_only=True, data_only=True)
-    ws = wb["Jobs FY26"]
+    if "Jobs" in wb.sheetnames:
+        ws = wb["Jobs"]
+    else:
+        ws = wb["Jobs FY26"]
     rows = list(ws.iter_rows(values_only=True))
     wb.close()
 

@@ -22,16 +22,24 @@ from .excel_reader import (
     PROYECTOS_EXCLUIDOS,
     get_semana_rows,
     load_jobs,
+    load_rates,
     parse_semana_fecha,
 )
+from .reporte_rd import generar_reporte_rd
 from .utils import fmt_fecha, sanitizar_nombre_archivo
 
 
-def procesar_aprobacion(excel_path: Path, semana_nombre: str, output_dir: Path) -> None:
+def procesar_aprobacion(
+    excel_path: Path,
+    semana_nombre: str,
+    output_dir: Path,
+    reporte_rd_path: Path | None = None,
+) -> None:
     lunes: date = parse_semana_fecha(semana_nombre)
 
     filas = get_semana_rows(excel_path, semana_nombre)
     jobs  = load_jobs(excel_path)
+    rates = load_rates(excel_path)
 
     # ── 1. Filas Cliente válidas ──────────────────────────────────────────────
     filas_cliente = [
@@ -49,6 +57,46 @@ def procesar_aprobacion(excel_path: Path, semana_nombre: str, output_dir: Path) 
     por_proyecto: dict[str, list[dict]] = defaultdict(list)
     for f in filas_cliente:
         por_proyecto[(f["proyecto"] or "").strip()].append(f)
+
+    # Rank por persona (para el Reporte_RD)
+    rank_por_nombre: dict[str, str] = {}
+    for f in filas_cliente:
+        n = f["nombre"] or ""
+        if n and n not in rank_por_nombre and f["rank"]:
+            rank_por_nombre[n] = f["rank"]
+
+    # ── 1b. Marcar proyectos que esta semana NO se van a cargar ──────────────
+    proyectos_lista = sorted(por_proyecto.keys())
+    print("\n  === PROYECTOS DE LA SEMANA ===")
+    for i, p in enumerate(proyectos_lista, start=1):
+        print(f"    {i}. {p}")
+    excl_input = input(
+        "\n  Proyectos a EXCLUIR esta semana (numeros separados por coma, "
+        "Enter = ninguno): "
+    ).strip()
+    if excl_input:
+        proyectos_excluidos_semana: set[str] = set()
+        for tok in excl_input.split(","):
+            tok = tok.strip()
+            if not tok:
+                continue
+            try:
+                idx = int(tok) - 1
+                if 0 <= idx < len(proyectos_lista):
+                    proyectos_excluidos_semana.add(proyectos_lista[idx])
+                else:
+                    print(f"    Aviso: número {tok} fuera de rango, ignorado.")
+            except ValueError:
+                print(f"    Aviso: '{tok}' no es un número válido, ignorado.")
+        if proyectos_excluidos_semana:
+            print("\n  Proyectos excluidos esta semana (sin correo ni reporte):")
+            for p in sorted(proyectos_excluidos_semana):
+                print(f"    - {p}")
+                por_proyecto.pop(p, None)
+
+    if not por_proyecto:
+        print("\n  Todos los proyectos de la semana fueron excluidos. Nada que procesar.")
+        return
 
     # ── 2. Ingresar respuestas de gerentes por proyecto ───────────────────────
     print("\n  === INGRESO DE RESPUESTAS DE GERENTES ===")
@@ -196,6 +244,26 @@ def procesar_aprobacion(excel_path: Path, semana_nombre: str, output_dir: Path) 
         print(f"    OK: {nombre}{sufijo}")
 
     print(f"\n  Carpeta de salida: {carpeta}")
+
+    # ── 5. Reporte_RD.xlsx ────────────────────────────────────────────────────
+    if reporte_rd_path is not None:
+        prorateos: dict[str, float] = {}
+        if nombre_andrea and prorateo_andrea is not None:
+            prorateos[nombre_andrea] = prorateo_andrea
+        if nombre_daniel and prorateo_daniel is not None:
+            prorateos[nombre_daniel] = prorateo_daniel
+
+        generar_reporte_rd(
+            reporte_rd_path,
+            lunes,
+            datos_aprobados,
+            rank_por_nombre,
+            jobs,
+            rates,
+            prorateos,
+            nombre_andrea,
+            nombre_daniel,
+        )
 
 
 # ── helper ────────────────────────────────────────────────────────────────────
