@@ -93,23 +93,18 @@ def generar_reporte_rd(
             person = f"{rank} - {nombre_fmt}" if rank else nombre_fmt
 
             factor = prorateos.get(nombre)
-            if nombre_andrea and nombre == nombre_andrea and factor is not None:
-                # Para Andrea el prorrateo NO se aplica a las Horas: se deja
-                # como factor explícito dentro de la fórmula del SUBTOTAL.
-                h = horas
-                prorateo_formula = factor
-            else:
-                h = round(horas * factor, 1) if factor is not None else horas
-                prorateo_formula = None
+            # Las Horas ya reflejan lo que finalmente se carga: horas tal
+            # cual salen del Excel, multiplicadas por el prorateo (Andrea,
+            # Daniel) si corresponde.
+            h = round(horas * factor, 1) if factor is not None else horas
             filas.append({
-                "rate":              _rate(nombre, rank),
-                "person":            person,
-                "engagement":        eng,
-                "horas":             h,
-                "proyecto":          proy,
-                "eaf":               eaf,
-                "aprobada":          aprobada,
-                "prorateo_formula":  prorateo_formula,
+                "rate":       _rate(nombre, rank),
+                "person":     person,
+                "engagement": eng,
+                "horas":      h,
+                "proyecto":   proy,
+                "eaf":        eaf,
+                "aprobada":   aprobada,
             })
 
     if not filas:
@@ -159,10 +154,10 @@ def generar_reporte_rd(
         c_eaf = ws.cell(row=fila_actual, column=7, value=f["eaf"])
         c_eaf.alignment = center_aln
         c_eaf.number_format = "0.000"
-        formula_sub = f"=A{fila_actual}*D{fila_actual}*(1+G{fila_actual})"
-        if f["prorateo_formula"] is not None:
-            formula_sub += f"*{f['prorateo_formula']}"
-        c_sub = ws.cell(row=fila_actual, column=8, value=formula_sub)
+        c_sub = ws.cell(
+            row=fila_actual, column=8,
+            value=f"=A{fila_actual}*D{fila_actual}*(1+G{fila_actual})",
+        )
         c_sub.alignment = center_aln
         c_sub.number_format = "0.00"
         fila_actual += 1
