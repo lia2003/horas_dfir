@@ -43,49 +43,14 @@ RATE_ANDREA = 361
 MARCA_SI = "☑"  # ☑
 MARCA_NO = "☐"  # ☐
 
-# Texto EXACTO de "Person Name" (rank + apellido, nombre) para cada persona
-# conocida del equipo, fijo sin importar cómo esté escrito el rank o el
-# nombre en la fila de la hoja semanal de ese proyecto (algunos proyectos
-# registran a la misma persona con un rank/formato distinto, ej. "Incharge"
-# en vez de "STAFF 2"). Se matchea buscando que AMBAS palabras clave (nombre
-# y apellido) estén contenidas en el nombre crudo de la hoja semanal.
-ROSTER_PERSON_NAME: list[tuple[tuple[str, str], str]] = [
-    (("rodrigo", "delgado"),    "SENIOR MANAGER 1 - Delgado, Rodrigo Eugenio"),
-    (("rodrigo", "beuzeville"), "SENIOR 2 - Beuzeville, Rodrigo Arturo"),
-    (("marcelo", "rojas"),      "STAFF 2 - Rojas, Marcelo Jon"),
-    (("alvaro", "barco"),       "STAFF 1 - Barco, Alvaro Joaquin"),
-    (("manuel", "zambrano"),    "STAFF 1 - Zambrano, Manuel Nazaret"),
-    (("marcelo", "carrion"),    "STAFF 1 - Carrion, Marcelo Andre"),
-    (("andrea", "neira"),       "STAFF 1 - Neira, Andrea Valeria"),
-    (("daniel", "cabrera"),     "INTERN (CS) - Cabrera, Daniel Sebastian"),
-    (("lia", "arancibia"),      "INTERN (CS) - Arancibia, Lia Mariel"),
-]
-
-
 def _apellido_nombre(nombre: str) -> str:
-    """'Nombre(s) Apellido' (como está en la hoja semanal) -> 'Apellido, Nombre(s)'.
-
-    Fallback solo para personas que no están en ROSTER_PERSON_NAME.
-    """
+    """'Nombre(s) Apellido' (como está en la hoja semanal) -> 'Apellido, Nombre(s)'."""
     partes = nombre.split()
     if len(partes) < 2:
         return nombre
     apellido = partes[-1]
     resto = " ".join(partes[:-1])
     return f"{apellido}, {resto}"
-
-
-def _person_name_fijo(nombre: str) -> tuple[str, str] | None:
-    """Busca a la persona en ROSTER_PERSON_NAME por nombre y apellido.
-
-    Retorna (rank, texto_completo) si hay match, o None si no está en la lista.
-    """
-    n = (nombre or "").lower()
-    for (clave1, clave2), texto in ROSTER_PERSON_NAME:
-        if clave1 in n and clave2 in n:
-            rank = texto.split(" - ", 1)[0]
-            return rank, texto
-    return None
 
 
 def generar_reporte_rd(
@@ -123,13 +88,9 @@ def generar_reporte_rd(
         except (ValueError, TypeError):
             eaf = 0.0
         for nombre, horas in datos["horas_aprobadas"].items():
-            fijo = _person_name_fijo(nombre)
-            if fijo:
-                rank, person = fijo
-            else:
-                rank = rank_por_nombre.get(nombre, "")
-                nombre_fmt = _apellido_nombre(nombre)
-                person = f"{rank} - {nombre_fmt}" if rank else nombre_fmt
+            rank = rank_por_nombre.get(nombre, "")
+            nombre_fmt = _apellido_nombre(nombre)
+            person = f"{rank} - {nombre_fmt}" if rank else nombre_fmt
 
             factor = prorateos.get(nombre)
             if nombre_andrea and nombre == nombre_andrea and factor is not None:
