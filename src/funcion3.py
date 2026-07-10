@@ -264,6 +264,12 @@ def procesar_aprobacion(
             nombre_andrea,
             nombre_daniel,
         )
+        print(
+            "  Reporte_RD.xlsx queda listo para enviar a tu jefe de RD "
+            "(revisa la columna APROBADAS antes de enviarlo)."
+        )
+    else:
+        print("\n  Aviso: no hay 'reporte_rd_path' configurado; no se generó Reporte_RD.xlsx.")
 
 
 # ── helper ────────────────────────────────────────────────────────────────────

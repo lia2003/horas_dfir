@@ -1,9 +1,16 @@
 """
-Función 4 — Resumen semanal para RD (Excel plano por persona-engagement).
+Función 4 — Resumen de horas YA cargadas (Excel plano por persona-engagement).
+
+NOTA: el reporte que se envía al jefe de RD ya NO se genera acá — se genera
+en la Función 3 (Reporte_RD.xlsx), a partir de las horas aprobadas para el
+equipo, no de lo que ya quedó cargado en el Excel. Esta función queda solo
+como resumen interno/posterior de verificación, una vez que el equipo
+efectivamente cargó sus horas.
 
 Filtra filas con Estado='Cargado' y Tipo='Cliente' (incluye 1. Lunes (FDS)).
 Si Andrea Neira tiene horas, pregunta su prorateo y lo aplica.
-Guarda el resultado en Resumen_RD.xlsx en la carpeta de salida de la semana.
+Guarda el resultado en Resumen_Horas_Cargadas.xlsx en la carpeta de salida
+de la semana.
 
 Columnas del Excel de salida:
   A: NSR Rate       — multiplicador de Rates FY26 según el rank de la persona
@@ -128,7 +135,7 @@ def generar_resumen(excel_path: Path, semana_nombre: str, output_dir: Path) -> N
     # ── 5. Generar Excel ──────────────────────────────────────────────────────
     carpeta = output_dir / semana_nombre
     carpeta.mkdir(parents=True, exist_ok=True)
-    archivo = carpeta / "Resumen_RD.xlsx"
+    archivo = carpeta / "Resumen_Horas_Cargadas.xlsx"
 
     wb_out = Workbook()
     ws_out = wb_out.active

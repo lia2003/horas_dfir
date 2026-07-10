@@ -49,15 +49,23 @@ Seleccionas cuáles arrastrar, y el código las copia a la hoja de la semana sig
 - Si la hoja siguiente no existe, la crea clonando la hoja "Plantilla".
 - Siempre hace respaldo del Excel antes de escribir.
 
-### Función 3 — Mensajes al equipo
-Ingresas las respuestas de los gerentes (engagement, job number, horas aprobadas por persona).  
-Genera un `.txt` por integrante con su tabla de horas aprobadas lista para enviar.
+### Función 3 — Mensajes al equipo + Reporte RD
+Antes de pedir las respuestas de gerentes, te lista los proyectos de la semana y te deja marcar
+cuáles NO se van a cargar (algunas semanas hay proyectos sin horas para cargar).  
+Luego ingresas las respuestas de los gerentes (engagement, job number, horas aprobadas por
+persona) y genera un `.txt` por integrante con su tabla de horas aprobadas lista para enviar.
+
+Con esos mismos datos (ya sin los proyectos excluidos) arma/actualiza `Reporte_RD.xlsx` en la
+ruta de `reporte_rd_path`, agregando una hoja nueva por semana (`DD-MM-YYYY`) sin borrar las
+anteriores. Ese archivo es el que se envía al jefe de RD — se genera a partir de las horas
+aprobadas para el equipo, no de lo que quedó cargado en el Excel.
 
 - El ajuste de horas en el Excel (si el gerente aprobó distinto a lo mapeado) lo haces tú manualmente antes de que el equipo cargue.
+- La columna APROBADAS del Reporte_RD queda editable (dropdown ☑/☐) para marcarla vos misma antes de enviar.
 
-### Función 4 — Resumen para el jefe
-Genera la tabla de horas cargadas (Estado=Cargado) agrupada por persona y engagement, para pegar en Teams.  
-Incluye filas `1. Lunes (FDS)` que ya estén en Cargado.
+### Función 4 — Resumen de horas cargadas (interno)
+Genera la tabla de horas cargadas (Estado=Cargado) agrupada por persona y engagement, para pegar en Teams o para verificación propia una vez que el equipo ya cargó.  
+Incluye filas `1. Lunes (FDS)` que ya estén en Cargado. Ya no es el reporte que se envía a RD (eso lo genera la Función 3).
 
 ## Estructura del proyecto
 
