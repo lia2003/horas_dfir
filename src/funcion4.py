@@ -99,8 +99,7 @@ def generar_resumen(excel_path: Path, semana_nombre: str, output_dir: Path) -> N
             except ValueError:
                 print("  Ingresa un número válido (ej: 0.48).")
 
-    # Rate de Intern buscado de forma case-insensitive en Rates FY26
-    intern_rate = next((v for k, v in rates.items() if "intern" in k.lower()), "")
+    RATE_DANIEL = 338
 
     # ── 3. Acumular horas por (nombre, rank, engagement) ─────────────────────
     # Clave: (nombre, rank, engagement) → horas totales originales
@@ -162,7 +161,7 @@ def generar_resumen(excel_path: Path, semana_nombre: str, output_dir: Path) -> N
     ws_out.column_dimensions["D"].width = 10
 
     def _nsr_val(nombre: str, rank: str) -> float:
-        v = intern_rate if (nombre_daniel and nombre == nombre_daniel) else rates.get(rank, 0)
+        v = RATE_DANIEL if (nombre_daniel and nombre == nombre_daniel) else rates.get(rank, 0)
         try:
             return float(v)
         except (ValueError, TypeError):
@@ -186,7 +185,7 @@ def generar_resumen(excel_path: Path, semana_nombre: str, output_dir: Path) -> N
             horas = h_orig
 
         if nombre_daniel and nombre == nombre_daniel:
-            nsr_rate = intern_rate
+            nsr_rate = RATE_DANIEL
         else:
             nsr_rate = rates.get(rank, "")
         person_name = f"{rank} - {nombre}" if rank else nombre
@@ -215,7 +214,7 @@ def generar_resumen(excel_path: Path, semana_nombre: str, output_dir: Path) -> N
             h = h_orig
             label_h = f"{h:.1f}h"
         if nombre_daniel and nombre == nombre_daniel:
-            nsr = intern_rate
+            nsr = RATE_DANIEL
         else:
             nsr = rates.get(rank, "?")
         print(f"  [{nsr}]  {rank} - {nombre:<28} {eng:<20} {label_h}")

@@ -36,6 +36,7 @@ HEADERS = [
 ]
 
 RATE_ANDREA = 361
+RATE_DANIEL = 338
 
 # Checkbox visual en la columna APROBADAS: se guarda como texto y se elige
 # mediante dropdown de validación de datos (Excel no soporta insertar
@@ -94,11 +95,9 @@ def generar_reporte_rd(
     nombre_andrea: str | None,
     nombre_daniel: str | None,
 ) -> None:
-    intern_rate = next((v for k, v in rates.items() if "intern" in k.lower()), 0)
-
     def _rate(nombre: str, rank: str) -> float:
         if nombre_daniel and nombre == nombre_daniel:
-            v = intern_rate
+            v = RATE_DANIEL
         elif nombre_andrea and nombre == nombre_andrea:
             v = RATE_ANDREA
         else:
