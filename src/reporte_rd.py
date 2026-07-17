@@ -43,6 +43,27 @@ RATE_ANDREA = 361
 MARCA_SI = "☑"  # ☑
 MARCA_NO = "☐"  # ☐
 
+# Formato exacto "RANK - Apellido, Nombre(s) completo(s)" para el Reporte_RD,
+# pedido explícitamente por la usuaria (el nombre de la hoja semanal no trae
+# el nombre completo ni el rank en mayúsculas). Clave = nombre tal como
+# aparece en la hoja semanal (normalizado en minúsculas/sin espacios extra).
+NOMBRES_RD_OVERRIDE = {
+    "rodrigo delgado":     "SENIOR MANAGER 1 - Delgado, Rodrigo Eugenio",
+    "rodrigo beuzeville":  "SENIOR 2 - Beuzeville, Rodrigo Arturo",
+    "marcelo rojas":       "STAFF 2 - Rojas, Marcelo Jon",
+    "joaquin barco":       "STAFF 1 - Barco, Alvaro Joaquin",
+    "manuel zambrano":     "STAFF 1 - Zambrano, Manuel Nazaret",
+    "marcelo carrion":     "STAFF 1 - Carrion, Marcelo Andre",
+    "andrea neira":        "STAFF 1 - Neira, Andrea Valeria",
+    "daniel cabrera":      "INTERN (CS) - Cabrera, Daniel Sebastian",
+    "lia arancibia":       "INTERN (CS) - Arancibia, Lia Mariel",
+}
+
+# Personas para las que las horas se muestran con 2 decimales (en vez de 1),
+# tanto en el valor calculado como en el number_format de la celda.
+NOMBRES_HORAS_2_DECIMALES = {"andrea neira", "daniel cabrera"}
+
+
 def _apellido_nombre(nombre: str) -> str:
     """'Nombre(s) Apellido' (como está en la hoja semanal) -> 'Apellido, Nombre(s)'."""
     partes = nombre.split()
@@ -51,6 +72,15 @@ def _apellido_nombre(nombre: str) -> str:
     apellido = partes[-1]
     resto = " ".join(partes[:-1])
     return f"{apellido}, {resto}"
+
+
+def _nombre_rd(nombre: str, rank: str) -> str:
+    """Nombre formateado para el Reporte_RD, aplicando el override si existe."""
+    override = NOMBRES_RD_OVERRIDE.get(" ".join(nombre.split()).lower())
+    if override:
+        return override
+    nombre_fmt = _apellido_nombre(nombre)
+    return f"{rank} - {nombre_fmt}" if rank else nombre_fmt
 
 
 def generar_reporte_rd(
@@ -89,14 +119,15 @@ def generar_reporte_rd(
             eaf = 0.0
         for nombre, horas in datos["horas_aprobadas"].items():
             rank = rank_por_nombre.get(nombre, "")
-            nombre_fmt = _apellido_nombre(nombre)
-            person = f"{rank} - {nombre_fmt}" if rank else nombre_fmt
+            person = _nombre_rd(nombre, rank)
+            dos_decimales = " ".join(nombre.split()).lower() in NOMBRES_HORAS_2_DECIMALES
 
             factor = prorateos.get(nombre)
             # Las Horas ya reflejan lo que finalmente se carga: horas tal
             # cual salen del Excel, multiplicadas por el prorateo (Andrea,
             # Daniel) si corresponde.
-            h = round(horas * factor, 1) if factor is not None else horas
+            decimales = 2 if dos_decimales else 1
+            h = round(horas * factor, decimales) if factor is not None else horas
             filas.append({
                 "rate":       _rate(nombre, rank),
                 "person":     person,
@@ -105,6 +136,7 @@ def generar_reporte_rd(
                 "proyecto":   proy,
                 "eaf":        eaf,
                 "aprobada":   aprobada,
+                "horas_fmt":  "0.00" if dos_decimales else "0.0",
             })
 
     if not filas:
@@ -147,7 +179,7 @@ def generar_reporte_rd(
         ws.cell(row=fila_actual, column=3, value=f["engagement"]).alignment = left_aln
         c_h = ws.cell(row=fila_actual, column=4, value=f["horas"])
         c_h.alignment = center_aln
-        c_h.number_format = "0.0"
+        c_h.number_format = f["horas_fmt"]
         marca = MARCA_SI if f["aprobada"] else MARCA_NO
         ws.cell(row=fila_actual, column=5, value=marca).alignment = center_aln
         ws.cell(row=fila_actual, column=6, value=f["proyecto"]).alignment = left_aln
