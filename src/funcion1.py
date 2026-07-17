@@ -161,8 +161,10 @@ def _escribir_txt(
 
     tabla = "\n".join(filas_txt)
 
+    gerente_corto = gerente.split()[0] if gerente else gerente
+
     cuerpo = (
-        f"Hola {gerente},\n\n"
+        f"Hola {gerente_corto},\n\n"
         f"Le compartimos las horas incurridas en el proyecto {proy} "
         f"hasta hoy {fmt_fecha(viernes)}.\n\n"
         "Con el objetivo de poder contabilizar las horas y el ingreso generado "

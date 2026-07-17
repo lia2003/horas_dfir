@@ -340,9 +340,7 @@ def _generar_txt_integrante(
     tabla = "\n".join(filas_txt)
 
     partes: list[str] = [
-        f"Hola {nombre_corto},",
-        "",
-        "Te compartimos las horas aprobadas para cargar esta semana:",
+        f"Hola {nombre_corto}, carga tus horas AHORA:",
         "",
         tabla,
     ]
@@ -351,9 +349,7 @@ def _generar_txt_integrante(
 
     partes += [
         "",
-        "Por favor carga exactamente las horas indicadas.",
-        "",
-        "Saludos,",
+        "No te olvides de ACTUALIZAR EL EXCEL COMO CARGADO.",
     ]
 
     contenido = "\n".join(partes)
